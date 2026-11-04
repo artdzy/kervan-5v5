@@ -15,6 +15,18 @@ npm start
 
 Sonra tarayıcıda `http://localhost:3000` adresini aç. Aynı ağdaki arkadaşların, sunucunun açılışta yazdığı `http://<yerel-ip>:3000` adresinden katılabilir.
 
+## İnternetten arkadaşlarla oynamak (ücretsiz)
+
+Oyunu kendi bilgisayarında çalıştırıp Cloudflare Quick Tunnel ile internete açabilirsin. Hesap gerekmez.
+
+```bash
+brew install cloudflared   # bir kere
+npm start                  # 1. terminal
+npm run tunnel             # 2. terminal
+```
+
+Tünel `https://....trycloudflare.com` biçiminde bir adres yazar; bu adresi arkadaşlarına gönder. Adres her açılışta değişir ve bilgisayarın açık kaldığı sürece çalışır.
+
 ## Oyun
 
 - **Takımlar:** Saldırganlar bombayı A ya da B bölgesine kurar (E basılı, 3,2 sn). Savunanlar bombayı imha eder (kitsiz 10 sn, kitle 5 sn). Kurulan bomba 40 saniyede patlar.
