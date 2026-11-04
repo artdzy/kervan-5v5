@@ -1,0 +1,26 @@
+{
+ "hdri": "goegap_4k.hdr",
+ "textures": {
+  "wall_sandstone": "sandstone_blocks_08",
+  "wall_plaster": "plastered_stone_wall",
+  "wall_clay": "clay_plaster",
+  "floor_cobble": "cobblestone_floor_08",
+  "floor_sand": "gravelly_sand",
+  "floor_tiles": "large_floor_tiles_02",
+  "floor_concrete": "concrete_floor_worn_001",
+  "wood": "rough_wood",
+  "metal": "rusty_metal_02"
+ },
+ "models": [
+  "wooden_crate_01",
+  "wooden_crate_02",
+  "Barrel_01",
+  "wooden_barrels_01",
+  "concrete_road_barrier",
+  "planter_pot_clay",
+  "ceramic_vase_02",
+  "Lantern_01",
+  "potted_plant_02",
+  "old_military_crate"
+ ]
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Avatar Test</title>
+<style>body{margin:0;overflow:hidden;background:#789}</style>
+<script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
+</head><body>
+<script type="module">
+// avatar.html?view=front|side|back&pitch=0.3&speed=0
+import * as THREE from 'three';
+import { Avatar, loadSoldier } from '/js/avatar.js';
+const q = new URLSearchParams(location.search);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); r.outputColorSpace = THREE.SRGBColorSpace;
+r.toneMapping = THREE.ACESFilmicToneMapping; document.body.append(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#8fa3b5');
+scene.add(new THREE.HemisphereLight('#fff', '#664', 1.5)); const d = new THREE.DirectionalLight('#fff', 2.5); d.position.set(3, 5, 2); scene.add(d);
+const g = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: '#a98' })); g.rotation.x = -Math.PI / 2; scene.add(g);
+const cam = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+const view = q.get('view') || 'front';
+const pos = { front: [0, 1.4, -4.5], side: [4.5, 1.4, 0], back: [0, 1.6, 4.5], three: [3, 1.8, -3.5] }[view];
+cam.position.set(...pos); cam.lookAt(0, 1.0, 0);
+await loadSoldier();
+const weapons = (q.get('w') || 'rifle,pistol').split(',');
+const avs = weapons.map((w, i) => ({ a: new Avatar(scene, { n: 'Test' + i, tm: i % 2 ? 'def' : 'att', mate: true }), w, x: (i - (weapons.length - 1) / 2) * 1.4 }));
+window.__avs = avs;
+const pitch = Number(q.get('pitch') || 0), speed = Number(q.get('speed') || 0);
+let t = 0;
+const crouch = q.get('crouch') === '1';
+function step(dt) {
+  t += dt;
+  for (const v of avs) v.a.update(dt, { x: v.x, y: 0, z: -speed * t * 0 + (speed ? Math.sin(t) * 0.0001 + t * speed * 0 : 0), yaw: 0, pitch, alive: true, crouch, weapon: v.w, team: v.a.team });
+  r.render(scene, cam);
+}
+for (let i = 0; i < 30; i++) step(1 / 30);
+let last = performance.now();
+(function loop() { requestAnimationFrame(loop); const n = performance.now(); step(Math.min(0.05, (n - last) / 1000)); last = n; })();
+</script></body></html>

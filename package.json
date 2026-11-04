@@ -1,0 +1,17 @@
+{
+  "name": "fps-arena-5v5",
+  "version": "1.0.0",
+  "description": "Tarayıcıda 5v5 çok oyunculu taktik FPS (Kervan haritası)",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "import-models": "node tools/import-models.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.22.1"
+  }
+}

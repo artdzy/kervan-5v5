@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Anim Sheet</title>
+<style>body{margin:0;background:#222;color:#fff;font:12px monospace} #out{display:grid;grid-template-columns:repeat(var(--cols,8),1fr);gap:2px} .c{position:relative} .c span{position:absolute;left:3px;top:2px;background:#000a;padding:1px 3px} canvas{width:100%;display:block}</style>
+<script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
+</head><body><div id="info"></div><div id="out"></div>
+<script type="module">
+// Oyun içi görüntü modeliyle animasyon karelerini ızgara halinde çizer.
+// sheet.html?m=rifle&from=0&to=243&step=6
+import * as THREE from 'three';
+import { ViewModel } from '/js/viewmodel.js';
+const q = new URLSearchParams(location.search);
+const key = q.get('m') || 'pistol';
+const from = Number(q.get('from') || 0), to = Number(q.get('to') || 9999), step = Number(q.get('step') || 6);
+const W = Number(q.get('w') || 200), H = Math.round(W * 0.75);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; r.autoClear = false; r.setClearColor('#5a6878');
+const vm = new ViewModel(W / H, r);
+if (q.get('cfg')) vm.overrideConfig = JSON.parse(q.get('cfg'));
+await vm.loadModels();
+if (key === 'all') {
+  const out = document.getElementById('out');
+  for (const k of ['pistol', 'deagle', 'smg', 'shotgun', 'rifle', 'carbine', 'sniper', 'knife', 'grenade']) {
+    vm.key = null; vm.setWeapon(k, true);
+    const seg = vm.cur.cfg?.segments?.[q.get('seg') || 'idle'];
+    vm.freezeAt(seg ? seg[0] / 30 : 0);
+    r.clear(); vm.render(r);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; cv.getContext('2d').drawImage(r.domElement, 0, 0);
+    const d = document.createElement('div'); d.className = 'c'; d.append(cv);
+    const sp = document.createElement('span'); sp.textContent = k; d.append(sp); out.append(d);
+  }
+  throw new Error('done');
+}
+vm.setWeapon(key, true);
+const clip = vm.cur.anims[0];
+const frames = Math.floor(clip.duration * 30);
+document.getElementById('info').textContent = `${key} ${clip.name} frames=${frames}`;
+const out = document.getElementById('out');
+for (let f = from; f <= Math.min(to, frames); f += step) {
+  vm.freezeAt(f / 30);
+  r.clear(); vm.render(r);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  cv.getContext('2d').drawImage(r.domElement, 0, 0);
+  const d = document.createElement('div'); d.className = 'c'; d.append(cv);
+  const s = document.createElement('span'); s.textContent = f; d.append(s);
+  out.append(d);
+}
+</script></body></html>

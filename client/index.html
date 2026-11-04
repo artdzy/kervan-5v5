@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kervan 5v5</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"><i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-d"></i></div>
+    <div id="hitmarker"></div>
+    <div id="scope"><div class="scope-ring"></div></div>
+    <div id="damage-flash"></div>
+    <div id="blood-overlay"></div>
+    <div id="dmg-indicators"></div>
+
+    <div id="top">
+      <div class="score att"><span id="score-att">0</span><small id="alive-att"></small></div>
+      <div id="timer-box"><div id="timer">1:55</div><div id="round-label">Round 1</div></div>
+      <div class="score def"><span id="score-def">0</span><small id="alive-def"></small></div>
+    </div>
+    <canvas id="radar" width="220" height="220"></canvas>
+    <div id="killfeed"></div>
+    <div id="center-msg"></div>
+    <div id="sub-msg"></div>
+    <div id="notify"></div>
+    <div id="progress" class="hidden"><div class="label" id="progress-label">Bomba kuruluyor</div><div class="bar"><div id="progress-fill"></div></div></div>
+    <div id="bomb-hint" class="hidden"></div>
+
+    <div id="bottom-left">
+      <div class="stat"><span class="ico">✚</span><span id="hp">100</span></div>
+      <div class="stat"><span class="ico">⛨</span><span id="armor">0</span></div>
+      <div class="money">$<span id="money">800</span></div>
+    </div>
+    <div id="bottom-right">
+      <div id="weapon-name">P9 Tabanca</div>
+      <div id="ammo"><span id="mag">15</span><small> / <span id="reserve">45</span></small></div>
+      <div id="slots"></div>
+    </div>
+    <div id="spectate" class="hidden"></div>
+    <div id="chat-log"></div>
+    <input id="chat-input" class="hidden" maxlength="120" placeholder="Mesaj yaz, Enter ile gönder">
+  </div>
+
+  <!-- Satın alma menüsü -->
+  <div id="buy-menu" class="hidden">
+    <div class="buy-head"><h2>Satın Al</h2><div class="buy-money">$<span id="buy-money">0</span></div><div class="buy-hint">B / Esc ile kapat</div></div>
+    <div id="buy-cats"></div>
+  </div>
+
+  <!-- Skor tablosu -->
+  <div id="scoreboard" class="hidden">
+    <div class="sb-team att"><h3>Saldırganlar <span id="sb-score-att">0</span></h3><table><thead><tr><th>Oyuncu</th><th>Ö</th><th>Ö'n</th><th>Para</th></tr></thead><tbody id="sb-att"></tbody></table></div>
+    <div class="sb-team def"><h3>Savunanlar <span id="sb-score-def">0</span></h3><table><thead><tr><th>Oyuncu</th><th>Ö</th><th>Ö'n</th><th>Para</th></tr></thead><tbody id="sb-def"></tbody></table></div>
+  </div>
+
+  <!-- Lobi -->
+  <div id="lobby">
+    <div class="lobby-card">
+      <div class="logo">KERVAN<span>5v5</span></div>
+      <p class="tag">Taktik çok oyunculu FPS · Bomba kur, bölgeyi savun</p>
+      <label>Oyuncu adı <input id="name" maxlength="16" placeholder="Adın"></label>
+      <div class="team-pick">
+        <button data-team="att" class="tbtn att">Saldırganlar<small>bombayı kur</small></button>
+        <button data-team="auto" class="tbtn auto sel">Otomatik</button>
+        <button data-team="def" class="tbtn def">Savunanlar<small>bölgeyi koru</small></button>
+      </div>
+      <label class="sens">Grafik kalitesi <select id="quality"><option value="ultra">Ultra (SSAO, bloom, 4K gölge)</option><option value="high">Yüksek</option><option value="low">Düşük</option></select></label>
+      <label class="sens">Fare hassasiyeti <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1"><b id="sens-val">1.00</b></label>
+      <button id="play">OYNA</button>
+      <div id="lobby-status"></div>
+      <details class="controls">
+        <summary>Kontroller</summary>
+        <div class="grid">
+          <span>WASD</span><span>Hareket</span><span>Fare</span><span>Nişan / ateş, sağ tık: dürbün</span>
+          <span>Boşluk</span><span>Zıpla</span><span>Ctrl / C</span><span>Eğil</span>
+          <span>Shift</span><span>Yürü (sessiz)</span><span>R</span><span>Şarjör değiştir</span>
+          <span>1-5 / Q</span><span>Silah seç / son silah</span><span>E (basılı)</span><span>Bomba kur / imha et</span>
+          <span>B</span><span>Satın alma menüsü</span><span>Tab</span><span>Skor tablosu</span>
+          <span>T / Enter</span><span>Sohbet</span><span>Ölüyken tık</span><span>Takım arkadaşını izle</span>
+        </div>
+      </details>
+      <div class="credits" id="credits"></div>
+    </div>
+  </div>
+
+  <div id="click-to-play" class="hidden">Oyuna devam etmek için tıkla</div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
