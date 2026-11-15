@@ -55,6 +55,12 @@
     <div id="buy-cats"></div>
   </div>
 
+  <!-- Oyun içi donanım seçimi (L) -->
+  <div id="loadout-menu" class="hidden">
+    <div class="buy-head"><h2>Donanım</h2><div class="buy-hint">L / Esc ile kapat · Hazırlıkta doğuş bölgesindeysen hemen, değilse sonraki doğuşta</div></div>
+    <div class="loadout" id="game-loadout"></div>
+  </div>
+
   <!-- Skor tablosu -->
   <div id="scoreboard" class="hidden">
     <div class="sb-team att"><h3>Saldırganlar <span id="sb-score-att">0</span></h3><table><thead><tr><th>Oyuncu</th><th>Ö</th><th>Ö'n</th><th>Para</th></tr></thead><tbody id="sb-att"></tbody></table></div>
@@ -72,7 +78,12 @@
         <button data-team="auto" class="tbtn auto sel">Otomatik</button>
         <button data-team="def" class="tbtn def">Savunanlar<small>bölgeyi koru</small></button>
       </div>
-      <label class="sens">Grafik kalitesi <select id="quality"><option value="ultra">Ultra (SSAO, bloom, 4K gölge)</option><option value="high">Yüksek</option><option value="low">Düşük</option></select></label>
+      <div class="map-pick">
+        <button data-map="kervan" class="mbtn"><b>Kervan</b><small>Güneşli çöl kasabası</small></button>
+        <button data-map="liman" class="mbtn"><b>Liman</b><small>Yağmurlu konteyner limanı</small></button>
+      </div>
+      <div class="loadout" id="lobby-loadout"></div>
+      <label class="sens">Grafik kalitesi <select id="quality"><option value="ultra">Ultra (yansıma, hacimsel ışık, SSAO)</option><option value="high">Yüksek</option><option value="low">Düşük</option></select></label>
       <label class="sens">Fare hassasiyeti <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1"><b id="sens-val">1.00</b></label>
       <button id="play">OYNA</button>
       <div id="lobby-status"></div>
@@ -83,7 +94,7 @@
           <span>Boşluk</span><span>Zıpla</span><span>Ctrl / C</span><span>Eğil</span>
           <span>Shift</span><span>Yürü (sessiz)</span><span>R</span><span>Şarjör değiştir</span>
           <span>1-5 / Q</span><span>Silah seç / son silah</span><span>E (basılı)</span><span>Bomba kur / imha et</span>
-          <span>B</span><span>Satın alma menüsü</span><span>Tab</span><span>Skor tablosu</span>
+          <span>L</span><span>Silah seçimi</span><span>Tab</span><span>Skor tablosu</span>
           <span>T / Enter</span><span>Sohbet</span><span>Ölüyken tık</span><span>Takım arkadaşını izle</span>
         </div>
       </details>

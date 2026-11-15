@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'client', 'assets', 'polyhaven');
 
-export const HDRI = { id: 'goegap', res: '4k' };
+export const HDRIS = [{ id: 'goegap', res: '4k' }, { id: 'belfast_sunset_puresky', res: '4k' }];
 export const TEXTURES = {
   wall_sandstone: 'sandstone_blocks_08',
   wall_plaster: 'plastered_stone_wall',
@@ -18,8 +18,19 @@ export const TEXTURES = {
   floor_concrete: 'concrete_floor_worn_001',
   wood: 'rough_wood',
   metal: 'rusty_metal_02',
+  // Liman
+  asphalt: 'asphalt_02',
+  quay_concrete: 'concrete_floor_02',
+  container: 'container_side',
+  corrugated: 'corrugated_iron_02',
+  painted_metal: 'rusty_painted_metal',
+  brick: 'red_brick_03',
+  concrete_wall: 'concrete_wall_008',
+  shutter: 'painted_metal_shutter',
+  plate: 'metal_plate',
 };
-export const MODELS = ['wooden_crate_01', 'wooden_crate_02', 'Barrel_01', 'wooden_barrels_01', 'concrete_road_barrier', 'planter_pot_clay', 'ceramic_vase_02', 'Lantern_01', 'potted_plant_02', 'old_military_crate'];
+export const MODELS = ['wooden_crate_01', 'wooden_crate_02', 'Barrel_01', 'wooden_barrels_01', 'concrete_road_barrier', 'planter_pot_clay', 'ceramic_vase_02', 'Lantern_01', 'potted_plant_02', 'old_military_crate',
+  'concrete_road_barrier_02', 'modular_chainlink_fence', 'street_lamp_02', 'utility_box_02', 'small_lpg_tank'];
 const TEX_RES = '2k', MODEL_RES = '1k';
 
 async function json(url) { const r = await fetch(url); if (!r.ok) throw new Error(`${r.status} ${url}`); return r.json(); }
@@ -34,9 +45,11 @@ async function save(url, file) {
 
 async function main() {
   let n = 0;
-  const h = await json(`https://api.polyhaven.com/files/${HDRI.id}`);
-  if (await save(h.hdri[HDRI.res].hdr.url, path.join(OUT, 'hdri', `${HDRI.id}_${HDRI.res}.hdr`))) n++;
-  console.log('✓ HDRI', HDRI.id);
+  for (const HDRI of HDRIS) {
+    const h = await json(`https://api.polyhaven.com/files/${HDRI.id}`);
+    if (await save(h.hdri[HDRI.res].hdr.url, path.join(OUT, 'hdri', `${HDRI.id}_${HDRI.res}.hdr`))) n++;
+    console.log('✓ HDRI', HDRI.id);
+  }
   for (const [key, id] of Object.entries(TEXTURES)) {
     const f = await json(`https://api.polyhaven.com/files/${id}`);
     for (const [map, name] of [['Diffuse', 'diff'], ['nor_gl', 'nor'], ['arm', 'arm']]) {
@@ -54,7 +67,7 @@ async function main() {
     for (const [rel, inc] of Object.entries(g.include || {})) if (await save(inc.url, path.join(dir, rel))) n++;
     console.log('✓ model', id);
   }
-  fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify({ hdri: `${HDRI.id}_${HDRI.res}.hdr`, textures: TEXTURES, models: MODELS }, null, 1));
+  fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify({ hdris: HDRIS.map((h) => `${h.id}_${h.res}.hdr`), textures: TEXTURES, models: MODELS }, null, 1));
   console.log(`\n${n} dosya indirildi → ${path.relative(ROOT, OUT)}`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

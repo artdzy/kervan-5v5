@@ -123,6 +123,28 @@ export class Audio {
     this.tone(this.master, { f: 60, f2: 40, dur: 0.14, vol: 0.55, type: 'sine' });
     this.tone(this.master, { f: 55, f2: 38, dur: 0.16, vol: 0.4, type: 'sine', start: 0.22 });
   }
+  thunder(pow = 1) {
+    if (!this.ctx) return;
+    this.noiseBurst(this.master, { f: 140, q: 0.6, dur: 4.5, vol: 0.55 * pow, type: 'lowpass', attack: 0.25 });
+    this.noiseBurst(this.master, { f: 420, q: 0.5, dur: 1.8, vol: 0.25 * pow, type: 'lowpass', start: 0.05, attack: 0.02 });
+    this.tone(this.master, { f: 48, f2: 28, dur: 3.5, vol: 0.4 * pow, type: 'sine', start: 0.1 });
+  }
+  // sürekli yağmur sesi; çatı altında boğuk ve metal çatıya vuran tıkırtılar
+  setRain(level, muffled = false) {
+    if (!this.ctx) return;
+    if (!this.rainNode) {
+      if (level <= 0) return;
+      const src = this.ctx.createBufferSource(); src.buffer = this.noise; src.loop = true;
+      const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400;
+      const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(this.master); src.start();
+      this.rainNode = { src, lp, g };
+    }
+    const t = this.ctx.currentTime;
+    this.rainNode.g.gain.setTargetAtTime(level * (muffled ? 0.32 : 0.16), t, 0.4);
+    this.rainNode.lp.frequency.setTargetAtTime(muffled ? 900 : 6000, t, 0.3);
+  }
   buy() { if (this.ctx) this.tone(this.master, { f: 1200, f2: 1600, dur: 0.08, vol: 0.2, type: 'triangle' }); }
   swing(pos) { if (this.ctx) this.noiseBurst(this.out(pos), { f: 1500, q: 0.7, dur: 0.15, vol: 0.3 }); }
 }

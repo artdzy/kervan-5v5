@@ -132,6 +132,54 @@ const BASE_POS = {
   carbine: [0.16, -0.19, -0.42], sniper: [0.16, -0.2, -0.4], grenade: [0.2, -0.18, -0.4], bomb: [0.1, -0.22, -0.45],
 };
 
+// Islak silah: model uzayında sabit duran yağmur damlaları (kabarık normal + çok düşük pürüzlülük)
+// ve genel ıslaklık (koyulaşma, parlama). Damlalar güneşte ve HDRI'de pırıl pırıl parlar.
+function wetGun(mat, U) {
+  if (mat.userData.wetPatched) return;
+  mat.userData.wetPatched = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev?.(sh, r);
+    sh.uniforms.uWet = U.uWet;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vObjP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vObjP; uniform float uWet;
+        float dh(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        float gDrop, gMask;`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        {
+          // model birimine göre damla ölçeği (cm modeller ~0.5 cm, metre modeller ayrıca ölçeklenir)
+          float span = length(fwidth(vObjP));
+          float freq = span > 0.05 ? 1.6 : 160.0;
+          vec3 q = vObjP * freq;
+          vec3 id = floor(q), f = fract(q);
+          vec3 c = vec3(dh(id), dh(id + 3.1), dh(id + 7.7)) * 0.5 + 0.25;
+          float rr = 0.1 + 0.16 * dh(id + 1.3);
+          float present = step(0.8, dh(id + 5.5));
+          float d = length(f - c);
+          gDrop = present * max(0.0, 1.0 - d * d / (rr * rr)) * uWet;
+          gMask = present * smoothstep(rr, rr * 0.8, d) * uWet;
+          // pürüzlü yüzeyler (kumaş, eldiven) ıslanınca az parlar; metal/plastik daha çok
+          roughnessFactor = mix(roughnessFactor * mix(1.0, mix(0.65, 0.92, smoothstep(0.55, 0.85, roughnessFactor)), uWet), 0.03, gMask);
+          diffuseColor.rgb *= mix(1.0, 0.8, uWet) * (1.0 - gMask * 0.5);
+        }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          float hm = gDrop * 0.0018;
+          vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition);
+          vec3 R1 = cross(sy, normal), R2 = cross(normal, sx);
+          float det = dot(sx, R1);
+          vec3 grad = sign(det) * (dFdx(hm) * R1 + dFdy(hm) * R2);
+          normal = normalize(abs(det) * normal - grad);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'wetgun' + (mat.name || '');
+  mat.needsUpdate = true;
+}
+
 // Klipten [a,b] kare aralığını, TÜM izleri örnekleyerek ayrı klip yapar
 // (AnimationUtils.subclip aralıkta anahtarı olmayan izleri attığı için kemikler yanlış pozda kalıyordu)
 function sampleSubclip(clip, name, a, b, fps) {
@@ -164,12 +212,16 @@ export class ViewModel {
     this.scene = new THREE.Scene();
     if (renderer) {
       const pm = new THREE.PMREMGenerator(renderer);
-      this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.defaultEnv = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      this.scene.environment = this.defaultEnv;
       this.scene.environmentIntensity = 0.6;
     }
     this.camera = new THREE.PerspectiveCamera(62, aspect, 0.01, 10);
-    this.scene.add(new THREE.HemisphereLight('#e6efff', '#6a5236', 1.6));
-    const d = new THREE.DirectionalLight('#fff3dd', 2.2); d.position.set(0.5, 1, 0.6); this.scene.add(d);
+    this.hemi = new THREE.HemisphereLight('#e6efff', '#6a5236', 1.6);
+    this.sunLight = new THREE.DirectionalLight('#fff3dd', 2.2); this.sunLight.position.set(0.5, 1, 0.6);
+    this.scene.add(this.hemi, this.sunLight);
+    this.wetU = { uWet: { value: 0 } };
+    this.sunVis = 1;
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.models = {};      // key -> {group, muzzle, gltf?}
@@ -219,7 +271,7 @@ export class ViewModel {
       if (!o.isMesh) return;
       o.frustumCulled = false; o.castShadow = false;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      for (const m of mats) if (m) { m.depthWrite = true; if (m.map) m.map.anisotropy = 8; }
+      for (const m of mats) if (m) { m.depthWrite = true; if (m.map) m.map.anisotropy = 8; wetGun(m, this.wetU); }
     });
     // pivot: ölçek + yön; holder: konum (update() sallanma/geri tepme uygular)
     // birim normalizasyonu: metre ile çizilmiş modelleri santimetreye çevir
@@ -291,6 +343,19 @@ export class ViewModel {
     this.update(0, { speed: 0, onGround: true });
   }
   play(name) { this.playOnce(name); }
+
+  // dünyanın HDRI'si, güneşi ve yağmuruyla silahı aydınlat (görüş modeli kamera uzayında durur)
+  syncWorld(o) {
+    const sc = this.scene;
+    if (o.env) { sc.environment = o.env; sc.environmentIntensity = o.envIntensity ?? 1; sc.environmentRotation.set(0, (o.envRotY || 0) - o.camYaw, 0); }
+    else { sc.environment = this.defaultEnv; sc.environmentIntensity = 0.6; sc.environmentRotation.set(0, 0, 0); }
+    this.sunVis += ((o.sunVisible ? 1 : 0) - this.sunVis) * Math.min(1, (o.dt || 0.016) * 6);
+    if (o.sunViewDir) this.sunLight.position.copy(o.sunViewDir).multiplyScalar(5);
+    if (o.sunColor) this.sunLight.color.copy(o.sunColor);
+    this.sunLight.intensity = (o.sunIntensity ?? 2.2) * (0.08 + 0.92 * this.sunVis);
+    if (o.ambient) { this.hemi.color.copy(o.ambient); this.hemi.groundColor.copy(o.ambient).multiplyScalar(0.35); this.hemi.intensity = o.ambientIntensity ?? 1; }
+    this.wetU.uWet.value += ((o.wet || 0) - this.wetU.uWet.value) * Math.min(1, (o.dt || 0.016) * 0.8);
+  }
 
   setTeam(team) {
     if (team === this.team) return;

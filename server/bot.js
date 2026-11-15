@@ -1,8 +1,9 @@
 // Sunucu tarafı bot yapay zekâsı
 import { WEAPONS, PLAYER, ROUND, EQUIP } from '../shared/constants.js';
 import {
-  REGIONS, findPath, cellOf, cellCenter, hasLOS, SPAWN_CENTER, zoneAt, walkable,
+  REGIONS, findPath, cellOf, cellCenter, hasLOS, SPAWN_CENTER, zoneAt, walkable, MAP,
 } from '../shared/map.js';
+const getMap = () => MAP;
 import { anglesTo, wrapAngle, approachAngle, dirFromAngles, applySpread, dist2 } from '../shared/util.js';
 
 export const BOT_NAMES = ['Kartal', 'Şahin', 'Poyraz', 'Bora', 'Tufan', 'Kaya', 'Atlas', 'Doruk', 'Yiğit', 'Alp', 'Ozan', 'Toprak', 'Rüzgar', 'Demir', 'Çınar'];
@@ -25,6 +26,13 @@ export class BotBrain {
     this.stuckT = 0; this.lastPos = null; this.burst = 0; this.burstPauseUntil = 0;
     this.role = null; this.startDelay = rand(0, 1.5);
     this.strafeDir = 0; this.strafeUntil = 0; this._knewPlant = false; this.crouchFight = false;
+  }
+
+  // botlar için rastgele ama dengeli donanım
+  pickLoadout() {
+    const r = Math.random(), p = this.p;
+    const primary = r < 0.38 ? (p.team === 'att' ? 'rifle' : 'carbine') : r < 0.58 ? (p.team === 'att' ? 'carbine' : 'rifle') : r < 0.75 ? 'smg' : r < 0.88 ? 'shotgun' : 'sniper';
+    p.loadout = { primary, secondary: Math.random() < 0.3 ? 'deagle' : 'pistol' };
   }
 
   buy() {
@@ -228,14 +236,17 @@ export class BotBrain {
     const [sx, sz] = cellOf(p.pos.x, p.pos.z);
     // saldırganlar doğuştan çıkarken farklı rotalar kullanır (uzun / kısa / tünel / orta)
     let via = null;
-    if (p.team === 'att' && cell && sz >= 30 && kind !== 'hunt' && kind !== 'bomb' && g.bomb.state !== 'planted') {
-      const siteA = cell[0] > 24;
-      if (!g.attRoute) g.attRoute = {};
+    const MAPDEF = getMap();
+    if (p.team === 'att' && cell && sz >= MAPDEF.attSpawnMinZ && kind !== 'hunt' && kind !== 'bomb' && g.bomb.state !== 'planted') {
+      // hedef hücre A'ya mı B'ye mi yakın
+      const ca = REGIONS.A[0], cb = REGIONS.B[0];
+      const siteA = Math.hypot(cell[0] - ca[0], cell[1] - ca[1]) < Math.hypot(cell[0] - cb[0], cell[1] - cb[1]);
       const key = siteA ? 'A' : 'B';
-      if (!g.attRoute[key] || g.attRoute.round !== g.roundNum) {
-        g.attRoute = { round: g.roundNum, A: Math.random() < 0.65 ? [41, 30] : [30, 20], B: Math.random() < 0.7 ? [7, 28] : [19, 12] };
+      if (!g.attRoute || g.attRoute.round !== g.roundNum) {
+        const r = MAPDEF.routes;
+        g.attRoute = { round: g.roundNum, A: Math.random() < 0.65 ? r.A[0] : r.A[1], B: Math.random() < 0.7 ? r.B[0] : r.B[1] };
       }
-      via = Math.random() < 0.85 ? g.attRoute[key] : (siteA ? [24, 25] : [7, 28]);
+      via = Math.random() < 0.85 ? g.attRoute[key] : (siteA ? MAPDEF.routes.mid : MAPDEF.routes.B[0]);
     }
     if (cell && via) {
       const a = findPath(sx, sz, via[0], via[1]) || [];

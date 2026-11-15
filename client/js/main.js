@@ -1,15 +1,13 @@
 // İstemci giriş noktası: render döngüsü, girdi, ağ, oyun durumu
 import * as THREE from 'three';
 import { WEAPONS, WEAPON_KEYS, PLAYER, ROUND, GRENADE, TEAM_NAMES, BUY_RADIUS, INTERP_DELAY, BUY_MENU } from '/shared/constants.js';
-import { SPAWN_CENTER, zoneAt, raycastMap, hasLOS } from '/shared/map.js';
+import { SPAWN_CENTER, zoneAt, raycastMap, hasLOS, setMap, MAP_ID, MAPS, underRoof } from '/shared/map.js';
 import { stepPlayer } from '/shared/physics.js';
 import { dirFromAngles, applySpread, wrapAngle, rayAABB, raySphere, clamp } from '/shared/util.js';
-import { buildWorld } from './world.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { buildWorld, disposeWorld } from './world.js';
+import { Pipeline, QUALITY as QPRESETS } from './render/pipeline.js';
+import { PlanarReflection } from './render/reflection.js';
+import { Rain } from './render/weather.js';
 import { Avatar } from './avatar.js';
 import { ViewModel } from './viewmodel.js';
 import { Effects } from './effects.js';
@@ -21,41 +19,42 @@ const container = document.getElementById('game');
 const QUALITY = localStorage.getItem('fps-quality') || 'ultra';
 document.getElementById('quality').value = QUALITY;
 document.getElementById('quality').addEventListener('change', (e) => { localStorage.setItem('fps-quality', e.target.value); location.reload(); });
-const renderer = new THREE.WebGLRenderer({ antialias: QUALITY === 'low', powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY === 'ultra' ? 1.25 : QUALITY === 'high' ? 1 : 0.85));
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', stencil: false });
+const DPR = Math.min(window.devicePixelRatio, 2);
+renderer.setPixelRatio(DPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMapping = THREE.NoToneMapping;      // ton eşleme kendi final geçişimizde
 renderer.autoClear = false;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const BASE_FOV = 78;
-const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.05, 600);
+const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.05, 1500);
 camera.rotation.order = 'YXZ';
-const world = buildWorld(scene, renderer, QUALITY);
-window.__world = world;
-
-// ---- post-processing (Ultra/Yüksek)
-let composer = null, gtao = null, bloom = null;
-function makeComposer() {
-  if (QUALITY === 'low') return;
-  const pr = renderer.getPixelRatio();
-  const rt = new THREE.WebGLRenderTarget(window.innerWidth * pr, window.innerHeight * pr, { type: THREE.HalfFloatType, samples: 4 });
-  composer = new EffectComposer(renderer, rt);
-  composer.addPass(new RenderPass(scene, camera));
-  if (QUALITY === 'ultra') {
-    gtao = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
-    gtao.output = GTAOPass.OUTPUT.Default;
-    gtao.blendIntensity = 1.0;
-    gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1, samples: 8, distanceFallOff: 1 });
-    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, rings: 2, samples: 8 });
-    composer.addPass(gtao);
+const pipeline = new Pipeline(renderer, QUALITY);
+pipeline.resize(window.innerWidth, window.innerHeight, DPR);
+const QP = QPRESETS[QUALITY] || QPRESETS.ultra;
+const reflection = new PlanarReflection(renderer, { y: 0, scale: QP.reflect });
+const wetShared = { uTime: { value: 0 }, uRain: { value: 1 } };
+let world = null, rain = null;
+let lobbyMap = localStorage.getItem('fps-map') || 'kervan';
+function loadMap(id) {
+  if (world && world.id === id) return;
+  disposeWorld(scene, world);
+  rain?.dispose(); rain = null;
+  setMap(id);
+  world = buildWorld(scene, renderer, QUALITY, { reflection, shared: wetShared });
+  reflection.hidden = world.reflectives || [];
+  reflection.enabled = QP.reflect > 0 && reflection.hidden.length > 0;
+  if (world.rain && QP.rain > 0) {
+    rain = new Rain(scene, { count: Math.round(12000 * QP.rain), splashes: Math.round(800 * QP.rain), roofs: world.roofs || [] });
+    rain.onThunder = (p) => audio.thunder(p);
   }
-  bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.45, 0.95);
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
+  wetShared.uRain.value = world.rain ? 1 : 0;
+  fx?.clearDecals?.();
+  hud?.setMap?.();
+  window.__world = world;
 }
 const vm = new ViewModel(window.innerWidth / window.innerHeight, renderer);
 const fx = new Effects(scene);
@@ -65,10 +64,10 @@ window.__dbg = { fx, hud: () => hud, camera };
 const audio = new Audio();
 const hud = new HUD();
 
-makeComposer();
+loadMap(MAPS[lobbyMap] ? lobbyMap : 'kervan');
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
-  if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+  pipeline.resize(window.innerWidth, window.innerHeight, DPR);
   camera.aspect = vm.camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix(); vm.camera.updateProjectionMatrix();
 });
@@ -104,6 +103,43 @@ document.querySelectorAll('.tbtn').forEach((b) => b.addEventListener('click', ()
   document.querySelectorAll('.tbtn').forEach((x) => x.classList.remove('sel'));
   b.classList.add('sel'); pickTeam = b.dataset.team;
 }));
+document.querySelectorAll('.mbtn').forEach((b) => {
+  b.classList.toggle('sel', b.dataset.map === lobbyMap);
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.mbtn').forEach((x) => x.classList.remove('sel'));
+    b.classList.add('sel'); lobbyMap = b.dataset.map; localStorage.setItem('fps-map', lobbyMap);
+    loadMap(lobbyMap);
+  });
+});
+// ---- donanım (silah seçimi): lobide ve oyun içinde (L)
+const PRIMARIES = ['rifle', 'carbine', 'smg', 'shotgun', 'sniper'];
+const SECONDARIES = ['pistol', 'deagle'];
+let loadout = (() => { try { return JSON.parse(localStorage.getItem('fps-loadout')) || null; } catch { return null; } })() || { primary: 'rifle', secondary: 'pistol' };
+function renderLoadout(el) {
+  const card = (k, sel) => {
+    const w = WEAPONS[k];
+    const dps = Math.min(1, (w.damage * (w.pellets || 1)) / w.rate / 700);
+    return `<button class="lo-btn ${sel ? 'sel' : ''}" data-w="${k}"><b>${w.name}</b><small>${w.auto ? 'Otomatik' : 'Tekli'} · ${w.mag} mermi</small><div class="bar"><i style="width:${Math.round(dps * 100)}%"></i></div></button>`;
+  };
+  el.innerHTML = `<h5>Ana silah</h5><div class="lo-row">${PRIMARIES.map((k) => card(k, loadout.primary === k)).join('')}</div>
+    <h5>Tabanca</h5><div class="lo-row">${SECONDARIES.map((k) => card(k, loadout.secondary === k)).join('')}</div>`;
+  el.querySelectorAll('.lo-btn').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.w;
+    if (WEAPONS[k].slot === 1) loadout.primary = k; else loadout.secondary = k;
+    localStorage.setItem('fps-loadout', JSON.stringify(loadout));
+    renderAllLoadouts();
+    if (S.connected) send({ t: 'loadout', primary: loadout.primary, secondary: loadout.secondary });
+  }));
+}
+function renderAllLoadouts() { renderLoadout($('lobby-loadout')); renderLoadout($('game-loadout')); }
+renderAllLoadouts();
+function toggleLoadout(force) {
+  const open = force !== undefined ? force : $('loadout-menu').classList.contains('hidden');
+  $('loadout-menu').classList.toggle('hidden', !open);
+  S.loadoutOpen = open;
+  if (open) document.exitPointerLock?.(); else lock();
+}
+
 $('play').addEventListener('click', () => {
   const name = nameInput.value.trim() || 'Oyuncu' + Math.floor(Math.random() * 900 + 100);
   localStorage.setItem('fps-name', name);
@@ -137,7 +173,7 @@ function connect(name, team) {
   $('play').disabled = true; $('lobby-status').textContent = 'Bağlanılıyor…';
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
   S.ws = ws;
-  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name, team })); };
+  ws.onopen = () => { ws.send(JSON.stringify({ t: 'join', name, team, map: lobbyMap, loadout })); };
   ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(m); };
   ws.onclose = () => {
     S.connected = false;
@@ -153,6 +189,7 @@ function onMsg(m) {
   switch (m.t) {
     case 'welcome':
       S.myId = m.id; S.team = m.team; S.connected = true;
+      if (m.map && m.map !== MAP_ID) { loadMap(m.map); hud.notify(`Sunucudaki harita: ${MAPS[m.map].name}`, 3); }
       S.offset = m.tm / 1000 - now();
       vm.setTeam(S.team);
       $('lobby').classList.add('hidden'); hud.show(true);
@@ -169,11 +206,12 @@ function onMsg(m) {
     case 'spawn':
       S.pos = { ...m.pos }; S.vel = { x: 0, y: 0, z: 0 }; S.yaw = m.yaw; S.pitch = 0; S.alive = true;
       S.punch = { p: 0, y: 0 }; S.w.reloadEnd = 0; S.w.scoped = 0; S.specId = null; S.deathPos = null;
+      S.pendingWeapon = true;   // doğuştan sonraki envanterde ana silaha geç
       hud.spectate(null);
       break;
     case 'pos': S.pos = { ...m.pos }; S.vel = { x: 0, y: 0, z: 0 }; break;
     case 'round':
-      hud.center(`Round ${m.n}`, '', 'Hazırlık — B ile satın al', 3);
+      hud.center(`Round ${m.n}`, '', 'Hazırlık — L ile silah seç', 3);
       fx.clearDecals();
       break;
     case 'live': audio.roundStart(); hud.notify(S.team === 'att' ? 'Bombayı A veya B bölgesine kur!' : 'Bölgeleri savun, bombayı engelle!', 3); break;
@@ -213,6 +251,7 @@ function onMsg(m) {
       break;
     }
     case 'bounce': audio.bounce(new THREE.Vector3(...m.p)); break;
+    case 'map': if (m.id !== MAP_ID) loadMap(m.id); break;
     case 'left': { const av = S.avatars.get(m.i); if (av) { av.dispose(); S.avatars.delete(m.i); } break; }
   }
 }
@@ -221,7 +260,8 @@ function onInv(m) {
   const prevBomb = S.inv.bomb;
   S.inv = { primary: m.primary, secondary: m.secondary, gr: m.gr, bomb: m.bomb, kit: m.kit, ammo: m.ammo, armor: m.armor, helmet: m.helmet };
   S.me.$ = m.money;
-  if (!owns(S.w.cur) || (m.w && m.w !== S.w.cur && (WEAPONS[m.w].slot === 1 || WEAPONS[m.w].slot === 2) && S.buyOpen)) switchTo(m.w || bestWeapon(), true);
+  if (S.pendingWeapon && m.w && owns(m.w)) { S.pendingWeapon = false; switchTo(m.w, true); }
+  else if (!owns(S.w.cur) || (m.w && m.w !== S.w.cur && (WEAPONS[m.w].slot === 1 || WEAPONS[m.w].slot === 2) && S.buyOpen)) switchTo(m.w || bestWeapon(), true);
   else if (S.round.ph === 'freeze' && m.w && m.w !== S.w.cur && owns(m.w)) switchTo(m.w, true);
   if (!prevBomb && m.bomb && S.alive) hud.notify('Bomba sende! A veya B bölgesinde E basılı tut.');
   if (S.buyOpen) hud.updateBuy(S.me.$, S.team, S.inv);
@@ -388,7 +428,7 @@ function localHit(o, d, maxT) {
 
 function fire() {
   const t = now(), key = S.w.cur, w = WEAPONS[key];
-  if (!S.alive || t < S.w.nextFire || t < S.w.drawEnd || S.buyOpen || S.chatOpen) return;
+  if (!S.alive || t < S.w.nextFire || t < S.w.drawEnd || S.buyOpen || S.chatOpen || S.loadoutOpen) return;
   if (S.round.ph === 'freeze' || S.round.ph === 'waiting') return;
   if (w.type === 'bomb') return;
   if (w.type === 'grenade') { if (!S.w.triggerUsed) throwGrenade(); S.w.triggerUsed = true; return; }
@@ -486,7 +526,7 @@ function lock() {
 const locked = () => document.pointerLockElement === renderer.domElement;
 renderer.domElement.addEventListener('click', () => { if (S.connected && !locked()) lock(); });
 document.addEventListener('pointerlockchange', () => {
-  $('click-to-play').classList.toggle('hidden', locked() || !S.connected || S.buyOpen || S.chatOpen);
+  $('click-to-play').classList.toggle('hidden', locked() || !S.connected || S.buyOpen || S.chatOpen || S.loadoutOpen);
   if (!locked()) { S.keys.clear(); S.mouse.l = false; }
 });
 $('click-to-play').addEventListener('click', lock);
@@ -531,6 +571,8 @@ document.addEventListener('keydown', (e) => {
     if (n >= 1 && n <= 9) { const items = BUY_MENU.flatMap((c) => c.items); if (items[n - 1]) buy(items[n - 1]); }
     return;
   }
+  if (S.loadoutOpen) { if (e.code === 'KeyL' || e.code === 'Escape') { e.preventDefault(); toggleLoadout(false); } return; }
+  if (e.code === 'KeyL') { e.preventDefault(); toggleLoadout(true); return; }
   if (e.code === 'KeyB') { e.preventDefault(); toggleBuy(true); return; }
   if ((e.code === 'KeyT' || e.code === 'Enter') && locked()) { e.preventDefault(); openChat(); return; }
   if (!locked()) return;
@@ -577,10 +619,46 @@ function frame() {
   const dt = Math.min(0.05, t - lastT);
   lastT = t;
   if (S.connected) update(dt, t);
-  else { camera.position.set(48 + Math.sin(t * 0.1) * 30, 14, 44 + Math.cos(t * 0.1) * 30); camera.lookAt(48, 0, 44); }
-  renderer.clear();
-  if (composer) composer.render(dt); else renderer.render(scene, camera);
-  if (S.connected && S.alive && !S.specId) vm.render(renderer);
+  else lobbyCamera(t);
+  world?.update?.(dt, t);
+  wetShared.uTime.value = t;
+  if (rain) { rain.update(dt, camera, world.atmosphere, world.sun.position.clone().sub(world.sun.target.position).normalize()); audio.setRain(1, underRoof(camera.position.x, camera.position.z)); } else audio.setRain(0);
+  if (window.__camPose) { const c = window.__camPose; camera.position.set(...c.p); camera.lookAt(...c.t); }   // geliştirici: serbest kamera
+  camera.updateMatrixWorld();
+  {
+    const sd = world.sun.position.clone().sub(world.sun.target.position).normalize();
+    const eye = camera.position;
+    const lit = !raycastMap(eye.x, eye.y, eye.z, sd.x, sd.y, sd.z, 90);
+    const atm = world.atmosphere;
+    vm.syncWorld({
+      env: scene.environment, envIntensity: (scene.environmentIntensity || 1) * 1.1, envRotY: scene.environmentRotation.y, camYaw: camera.rotation.y,
+      sunViewDir: sd.clone().applyQuaternion(camera.quaternion.clone().invert()), sunColor: atm.sunColor, sunIntensity: atm.sunIntensity * 0.9, sunVisible: lit,
+      ambient: atm.ambient, ambientIntensity: 0.9, wet: world.rain && !underRoof(eye.x, eye.z) ? 1 : 0, dt,
+    });
+  }
+  if (reflection.enabled) reflection.render(scene, camera, pipeline.W, pipeline.H);
+  pipeline.render(scene, camera, {
+    vm: S.connected && S.alive && !S.specId ? vm : null,
+    sun: world.sun, atm: world.atmosphere, box: world.box,
+    damage: Math.min(1, hud.hitFlash), lowHealth: hud.bloodK, ads: S.alive && S.w.scoped ? 1 : 0,
+    flash: (rain ? rain.flash * 0.5 : 0) + (S.flash || 0), dt,
+  });
+  if (S.flash) S.flash = Math.max(0, S.flash - dt * 4);
+}
+
+// lobi kamerası: haritaya göre yavaş sinematik çekimler
+const LOBBY_SHOTS = {
+  kervan: [{ p: [48, 2.2, 66], t: [48, 3, 20] }, { p: [80, 2.5, 40], t: [72, 3, 10] }, { p: [30, 14, 90], t: [48, 0, 40] }],
+  liman: [{ p: [52, 1.9, 7], t: [20, 9, -40] }, { p: [46, 1.9, 60], t: [46, 3, 10] }, { p: [86, 2.2, 72], t: [86, 3, 30] }, { p: [16, 2.2, 34], t: [24, 3, 14] }],
+};
+function lobbyCamera(t) {
+  const shots = LOBBY_SHOTS[MAP_ID] || LOBBY_SHOTS.kervan;
+  let k = Math.floor(t / 12) % shots.length, f = (t % 12) / 12;
+  if (window.__shot !== undefined) { k = window.__shot % shots.length; f = 0.5; }   // geliştirici: sabit çekim
+  const s = shots[k];
+  const drift = Math.sin(f * Math.PI) * 0.8;
+  camera.position.set(s.p[0] + (f - 0.5) * 6, s.p[1] + drift * 0.3, s.p[2]);
+  camera.lookAt(s.t[0] + (f - 0.5) * 4, s.t[1], s.t[2]);
 }
 
 function update(dt, t) {
@@ -609,7 +687,7 @@ function update(dt, t) {
       crouch: k.has('ControlLeft') || k.has('ControlRight') || k.has('KeyC') || (using && canDefuse),
       walk: k.has('ShiftLeft') || k.has('ShiftRight'),
       yaw: S.yaw, speedMul: spMul,
-      frozen: frozenPhase || using || S.buyOpen || S.chatOpen,
+      frozen: frozenPhase || using || S.buyOpen || S.chatOpen || S.loadoutOpen,
     };
     S.jumpHeld = k.has('Space');
     const ps = { pos: S.pos, vel: S.vel, onGround: S.onGround, crouch: S.crouch };

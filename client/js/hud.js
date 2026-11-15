@@ -1,6 +1,6 @@
 // HUD / arayüz güncellemeleri
 import { WEAPONS, EQUIP, BUY_MENU, TEAM_NAMES } from '/shared/constants.js';
-import { GRID, MAP_W, MAP_H, CELL } from '/shared/map.js';
+import { GRID, MAP_W, MAP_H, CELL, REGIONS } from '/shared/map.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -56,8 +56,7 @@ export class HUD {
     if (Math.abs(op - (this._lastOp || 0)) > 0.01) {
       this.bloodEl.style.opacity = op.toFixed(3);
       this._lastOp = op;
-      if (!this.canvasEl) this.canvasEl = document.querySelector('#game canvas');
-      if (this.canvasEl) this.canvasEl.style.filter = this.bloodK > 0.05 ? `saturate(${(1 - this.bloodK * 0.75).toFixed(2)}) contrast(${(1 + this.bloodK * 0.12).toFixed(2)})` : '';
+
     }
   }
 
@@ -69,13 +68,18 @@ export class HUD {
     const g = c.getContext('2d');
     for (let z = 0; z < MAP_H; z++) for (let x = 0; x < MAP_W; x++) {
       const ch = GRID[z][x];
-      g.fillStyle = ch === '#' ? 'rgba(0,0,0,0)' : ch === 'A' || ch === 'B' ? 'rgba(255,170,80,.45)' : ch === 'c' || ch === 'C' ? 'rgba(120,100,70,.8)' : 'rgba(200,190,170,.35)';
+      g.fillStyle = ch === '#' || ch === 'W' || ch === '~' ? 'rgba(0,0,0,0)' : ch === 'P' ? 'rgba(255,200,60,.8)' : ch === 'A' || ch === 'B' ? 'rgba(255,170,80,.45)' : ch === 'c' || ch === 'C' ? 'rgba(120,100,70,.8)' : 'rgba(200,190,170,.35)';
       g.fillRect(x * s, z * s, s, s);
     }
     g.fillStyle = 'rgba(255,200,120,.95)'; g.font = 'bold 14px Arial'; g.textAlign = 'center';
-    g.fillText('A', 39 * s, 9.5 * s); g.fillText('B', 8.5 * s, 11 * s);
+    for (const k of ['A', 'B']) {
+      const cells = REGIONS[k] || []; if (!cells.length) continue;
+      const cx = cells.reduce((a, c) => a + c[0], 0) / cells.length, cz = cells.reduce((a, c) => a + c[1], 0) / cells.length;
+      g.fillText(k, (cx + 0.5) * s, (cz + 0.8) * s);
+    }
     return c;
   }
+  setMap() { this.radarBase = this.makeRadarBase(); }
 
   drawRadar(me, list, bomb) {
     const g = this.radarCtx, S = this.el.radar.width, sc = 4 / CELL;
@@ -175,8 +179,7 @@ export class HUD {
 
   damage(angle, amt = 20) {
     this.hitFlash = Math.min(1, this.hitFlash + 0.35 + amt / 80);
-    this.el['damage-flash'].style.transition = 'none'; this.el['damage-flash'].style.opacity = 0.9;
-    requestAnimationFrame(() => { this.el['damage-flash'].style.transition = 'opacity .5s'; this.el['damage-flash'].style.opacity = 0; });
+
     if (angle !== null) {
       const d = document.createElement('div'); d.className = 'dmg-ind';
       d.style.transform = `rotate(${angle}rad)`;

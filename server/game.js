@@ -4,6 +4,7 @@ import {
 } from '../shared/constants.js';
 import {
   SPAWNS, SPAWN_YAW, SPAWN_CENTER, raycastMap, zoneAt, hasLOS, solidAt, cellHeight, CELL, groundHeight,
+  setMap, MAP_ID, MAPS,
 } from '../shared/map.js';
 import { rayAABB, raySphere, normalize, dist3, dist2 } from '../shared/util.js';
 import { BotBrain, BOT_NAMES } from './bot.js';
@@ -62,7 +63,25 @@ export class Game {
       history: [], lastInput: 0, bot: null,
     };
     this.giveAmmo(p, 'pistol');
+    p.loadout = { primary: 'rifle', secondary: 'pistol' };
     return p;
+  }
+
+  // lobide seçilen donanım: ana silah + tabanca (doğrulanmış)
+  sanitizeLoadout(l) {
+    const prim = l && WEAPONS[l.primary] && WEAPONS[l.primary].slot === 1 ? l.primary : (l && l.primary === null ? null : 'rifle');
+    const sec = l && WEAPONS[l.secondary] && WEAPONS[l.secondary].slot === 2 ? l.secondary : 'pistol';
+    return { primary: prim, secondary: sec };
+  }
+
+  // her doğuşta tam donanım: seçilen silahlar, yelek+kask, el bombası, savunmaya imha kiti
+  equipLoadout(p) {
+    p.ammo = {};
+    p.primary = p.loadout.primary; p.secondary = p.loadout.secondary;
+    if (p.primary) this.giveAmmo(p, p.primary);
+    this.giveAmmo(p, p.secondary);
+    p.armor = 100; p.helmet = true; p.grenades = 1; p.kit = p.team === 'def';
+    p.weapon = p.primary || p.secondary;
   }
 
   // ---------------------------------------------------------------- maç / round
@@ -106,8 +125,8 @@ export class Game {
     this.bomb = { state: 'none', carrier: null, pos: null, explodeAt: 0, site: null };
     const idx = { att: 0, def: 0 };
     for (const p of this.players.values()) {
-      if (!p.alive) this.resetInventory(p);
-      for (const k of Object.keys(p.ammo)) this.giveAmmo(p, k);
+      if (p.isBot) p.bot.pickLoadout();
+      this.equipLoadout(p);
       p.hasBomb = false;
       p.hp = 100; p.alive = true; p.using = false; p.progress = 0; p.progType = null;
       p.reloadEnd = 0; p.nextFire = 0;
@@ -127,7 +146,7 @@ export class Game {
     this.phaseEnd = this.time + ROUND.freeze;
     this.buyEnd = this.time + ROUND.buy;
     for (const p of this.players.values()) {
-      if (p.isBot) { p.bot.resetRound(); p.bot.buy(); }
+      if (p.isBot) p.bot.resetRound();
     }
     for (const p of this.players.values()) {
       this.send(p, { t: 'spawn', pos: p.pos, yaw: p.yaw });
@@ -169,6 +188,7 @@ export class Game {
         case 'shoot': this.handleShoot(player, m); break;
         case 'reload': this.startReload(player); break;
         case 'buy': this.handleBuy(player, m.item); break;
+        case 'loadout': this.handleLoadout(player, m); break;
         case 'throw': this.handleThrow(player, m); break;
         case 'chat': if (typeof m.msg === 'string' && m.msg.trim()) this.broadcast({ t: 'chat', i: player.id, msg: m.msg.slice(0, 120) }); break;
         case 'ping': this.send(player, { t: 'pong', c: m.c }); break;
@@ -193,17 +213,23 @@ export class Game {
       if (b.hasBomb) this.dropBomb(b);
       this.removePlayer(b);
     }
+    // ilk oyuncu haritayı seçer (maç beklerken)
+    if (this.phase === 'waiting' && typeof m.map === 'string' && MAPS[m.map] && m.map !== MAP_ID) {
+      setMap(m.map);
+      this.broadcast({ t: 'map', id: MAP_ID });
+    }
     const p = this.makePlayer(name, team, false);
     p.ws = ws;
+    p.loadout = this.sanitizeLoadout(m.loadout);
     this.players.set(p.id, p);
-    this.send(p, { t: 'welcome', id: p.id, team, tm: Math.round(this.time * 1000) });
+    this.send(p, { t: 'welcome', id: p.id, team, map: MAP_ID, tm: Math.round(this.time * 1000) });
     this.fillBots();
     this.broadcast({ t: 'msg', text: `${name} oyuna katıldı (${team === 'att' ? 'Saldırı' : 'Savunma'})` });
     if (this.phase === 'waiting') {
       this.startRound();
     } else if (this.phase === 'freeze') {
       // donma süresinde gelen oyuncu hemen doğsun
-      p.alive = true; p.hp = 100;
+      p.alive = true; p.hp = 100; this.equipLoadout(p);
       const sp = SPAWNS[team][Math.floor(Math.random() * SPAWNS[team].length)];
       p.pos = { x: sp.x, y: 0, z: sp.z }; p.yaw = SPAWN_YAW[team];
       this.send(p, { t: 'spawn', pos: p.pos, yaw: p.yaw });
@@ -444,6 +470,14 @@ export class Game {
     if (p.weapon === 'bomb') p.weapon = this.bestWeapon(p);
     this.sendInv(p);
     for (const q of this.aliveOf('att')) this.send(q, { t: 'msg', text: 'Bomba düşürüldü!' });
+  }
+
+  handleLoadout(p, m) {
+    p.loadout = this.sanitizeLoadout(m);
+    // hazırlık/satın alma süresinde ve doğuş bölgesindeyse hemen uygula, değilse sonraki doğuşta
+    const now = p.alive && (this.phase === 'freeze' || (this.phase === 'live' && this.time <= this.buyEnd)) && dist2(p.pos, SPAWN_CENTER[p.team]) <= BUY_RADIUS;
+    if (now) { const bomb = p.hasBomb; this.equipLoadout(p); p.hasBomb = bomb; this.sendInv(p); this.send(p, { t: 'msg', text: 'Donanım değişti' }); }
+    else this.send(p, { t: 'msg', text: 'Yeni donanım bir sonraki doğuşta' });
   }
 
   handleBuy(p, item) {

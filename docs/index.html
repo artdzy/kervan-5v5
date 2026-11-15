@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kervan 5v5 — Tactical FPS in the Browser</title>
+<meta name="description" content="Kervan 5v5 is an open-source, 5-versus-5 tactical shooter that runs in the browser: bomb defusal, bots, an in-round economy, two maps and a hand-written GLSL render pipeline. Built with three.js and Node.js.">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="canonical" href="https://artdzy.github.io/kervan-5v5/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Kervan 5v5 — Tactical FPS in the Browser">
+<meta property="og:description" content="5v5 bomb defusal, bots, two maps and a cinematic custom render pipeline. No install — just open a browser.">
+<meta property="og:image" content="https://artdzy.github.io/kervan-5v5/img/og.jpg">
+<meta property="og:url" content="https://artdzy.github.io/kervan-5v5/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preload" as="image" href="img/hero.jpg" fetchpriority="high">
+<style>
+:root{
+  --bg:#0a0b0d; --ink:#eceae6; --muted:#8f8c87; --dim:#5d5b58; --rule:#1f2023;
+  --sun:#f0a640; --sun2:#ffd08a; --sea:#6f8fb8;
+  --display:"Archivo",system-ui,sans-serif; --body:"Inter",system-ui,-apple-system,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --gut:clamp(16px,4vw,64px);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 var(--body);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+img{display:block;width:100%;height:auto}
+a{color:inherit}
+.x{font-family:var(--display);font-stretch:125%;font-weight:800;text-transform:uppercase;letter-spacing:-.01em}
+.c{font-family:var(--display);font-stretch:62%;font-weight:600;text-transform:uppercase;letter-spacing:.14em}
+.pad{padding-inline:var(--gut)}
+.label{font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.label b{color:var(--sun);font-weight:500}
+
+/* top bar */
+.bar{position:fixed;inset:0 0 auto;z-index:40;display:flex;align-items:center;gap:20px;height:60px;padding-inline:var(--gut);mix-blend-mode:difference;color:#fff}
+.bar .mark{font-family:var(--display);font-stretch:125%;font-weight:900;font-size:16px;letter-spacing:.02em;text-decoration:none}
+.bar nav{margin-left:auto;display:flex;gap:26px;font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.bar nav a{text-decoration:none;opacity:.8}
+.bar nav a:hover{opacity:1}
+@media (max-width:720px){.bar nav a:not(:last-child){display:none}}
+
+/* cover */
+.cover{position:relative;height:100svh;min-height:620px;overflow:hidden;isolation:isolate;display:flex;flex-direction:column;justify-content:flex-end}
+.cover>img{position:absolute;inset:0;height:100%;object-fit:cover;z-index:-2;transform:scale(1.04);animation:settle 2.4s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes settle{to{transform:none}}
+.cover::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(10,11,13,.35) 0%,rgba(10,11,13,0) 30%,rgba(10,11,13,.15) 55%,rgba(10,11,13,.92) 92%,var(--bg))}
+.cover h1{margin:0;font-size:clamp(40px,11.2vw,230px);line-height:.8;white-space:nowrap}
+.cover h1 span{color:var(--sun)}
+.cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding-block:28px 34px;border-top:1px solid rgba(255,255,255,.18);margin-top:28px}
+.cover-meta div{display:grid;gap:8px}
+.cover-meta strong{font:500 15px/1.35 var(--body);color:var(--ink)}
+@media (max-width:760px){.cover-meta{grid-template-columns:1fr 1fr}}
+
+/* statement */
+.statement{display:grid;grid-template-columns:1fr 2.2fr;gap:var(--gut);padding-block:clamp(96px,14vw,200px)}
+.statement p{margin:0;font-family:var(--display);font-stretch:100%;font-weight:500;font-size:clamp(26px,3.6vw,52px);line-height:1.12;letter-spacing:-.015em}
+.statement p em{font-style:normal;color:var(--sun2)}
+.statement .side{display:grid;align-content:start;gap:22px}
+.statement .side p{font:400 15px/1.6 var(--body);color:var(--muted);letter-spacing:0}
+@media (max-width:860px){.statement{grid-template-columns:1fr}}
+
+/* full-bleed plates */
+.plate{position:relative;margin:0}
+.plate figcaption{position:absolute;left:var(--gut);bottom:22px;color:#fff;text-shadow:0 1px 12px rgba(0,0,0,.6)}
+.duo{display:grid;grid-template-columns:1fr 1fr}
+.duo .plate img{height:100%;object-fit:cover;aspect-ratio:16/10}
+@media (max-width:760px){.duo{grid-template-columns:1fr}}
+
+/* chapter */
+.chapter{display:grid;grid-template-columns:auto 1fr;gap:0 var(--gut);align-items:end;padding-block:clamp(96px,13vw,180px) clamp(48px,6vw,80px)}
+.chapter .num{font-size:clamp(90px,16vw,240px);line-height:.78;color:transparent;-webkit-text-stroke:1.5px #3a3b3f}
+.chapter h2{margin:0;font-size:clamp(46px,8vw,128px);line-height:.85}
+.chapter .kicker{grid-column:2;margin-top:22px;max-width:640px;color:var(--muted);font-size:clamp(16px,1.5vw,19px)}
+@media (max-width:640px){.chapter{grid-template-columns:1fr}.chapter .kicker{grid-column:1}.chapter .num{margin-bottom:10px}}
+
+/* spec list */
+.specs{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule)}
+.specs div{padding:28px 24px 34px 0;border-bottom:1px solid var(--rule)}
+.specs div+div{padding-left:24px;border-left:1px solid var(--rule)}
+.specs div:nth-child(4n+1){padding-left:0;border-left:0}
+.specs h3{margin:14px 0 8px;font:600 18px/1.3 var(--body)}
+.specs p{margin:0;color:var(--muted);font-size:14.5px}
+@media (max-width:980px){.specs{grid-template-columns:1fr 1fr}.specs div:nth-child(n){padding-left:0;border-left:0}.specs div:nth-child(2n){padding-left:24px;border-left:1px solid var(--rule)}}
+@media (max-width:560px){.specs{grid-template-columns:1fr}.specs div:nth-child(2n){padding-left:0;border-left:0}}
+
+/* palette */
+.palette{display:grid;grid-template-columns:repeat(5,1fr);height:clamp(140px,18vw,240px)}
+.palette span{display:flex;align-items:flex-end;padding:14px 16px;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.palette-row{display:grid;grid-template-columns:200px 1fr;align-items:stretch;border-top:1px solid var(--rule)}
+.palette-row .label{padding:20px var(--gut) 20px 0;display:flex;align-items:center}
+@media (max-width:640px){.palette-row{grid-template-columns:1fr}.palette-row .label{padding:16px 0}}
+
+/* numbers */
+.numbers{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--rule)}
+.numbers div{padding:clamp(28px,4vw,56px) 0 clamp(28px,4vw,56px);border-bottom:1px solid var(--rule)}
+.numbers div:not(:nth-child(3n+1)){padding-left:clamp(16px,3vw,40px);border-left:1px solid var(--rule)}
+.numbers b{display:block;font-size:clamp(54px,8.5vw,136px);line-height:.85;margin-bottom:14px}
+.numbers b small{font-size:.4em;color:var(--sun)}
+.numbers span{color:var(--muted);font-size:15px}
+@media (max-width:760px){.numbers{grid-template-columns:1fr 1fr}.numbers div:nth-child(n){padding-left:0;border-left:0}.numbers div:nth-child(2n){padding-left:16px;border-left:1px solid var(--rule)}}
+
+/* arsenal */
+.arsenal{border-top:1px solid var(--rule)}
+.arsenal li{display:grid;grid-template-columns:70px 1fr auto;align-items:baseline;gap:20px;padding:18px 0;border-bottom:1px solid var(--rule);transition:padding .35s,color .35s}
+.arsenal li:hover{padding-left:14px;color:var(--sun2)}
+.arsenal ul{list-style:none;margin:0;padding:0}
+.arsenal .n{font:500 12px/1 var(--mono);color:var(--dim)}
+.arsenal .w{font-size:clamp(28px,4.6vw,64px);line-height:1}
+.arsenal .t{font:500 12px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:right}
+
+/* pipeline */
+.flow{display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);counter-reset:s}
+.flow div{counter-increment:s;padding:28px 20px 34px 0;position:relative}
+.flow div+div{padding-left:20px;border-left:1px solid var(--rule)}
+.flow div::before{content:counter(s,decimal-leading-zero);display:block;font:500 12px/1 var(--mono);color:var(--sun);margin-bottom:40px}
+.flow div+div::after{content:"";position:absolute;left:-5px;top:30px;width:9px;height:9px;background:var(--bg);border:1px solid var(--sun);transform:rotate(45deg)}
+.flow h4{margin:0 0 8px;font-size:clamp(17px,1.6vw,22px);line-height:1.05}
+.flow p{margin:0;color:var(--muted);font-size:14px;line-height:1.55}
+@media (max-width:1100px){.flow{grid-template-columns:repeat(3,1fr)}.flow div:nth-child(4){padding-left:0;border-left:0}.flow div:nth-child(4)::after{display:none}.flow div:nth-child(-n+3){border-bottom:1px solid var(--rule)}}
+@media (max-width:620px){.flow{grid-template-columns:1fr}.flow div:nth-child(n){padding-left:0;border-left:0;border-bottom:1px solid var(--rule)}.flow div::after{display:none}.flow div::before{margin-bottom:18px}}
+
+/* mosaic */
+.mosaic{display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:clamp(110px,13vw,230px)}
+.mosaic button{all:unset;display:block;cursor:zoom-in;overflow:hidden;position:relative}
+.mosaic button:focus-visible{outline:2px solid var(--sun);outline-offset:-4px;z-index:2}
+.mosaic img{height:100%;object-fit:cover;transition:transform 1s cubic-bezier(.2,.7,.2,1)}
+.mosaic button:hover img{transform:scale(1.045)}
+.mosaic .m1{grid-column:span 7;grid-row:span 3}.mosaic .m2{grid-column:span 5;grid-row:span 2}.mosaic .m3{grid-column:span 5;grid-row:span 1}
+.mosaic .m4,.mosaic .m5,.mosaic .m6{grid-column:span 4;grid-row:span 2}
+@media (max-width:760px){.mosaic{grid-template-columns:1fr 1fr;grid-auto-rows:150px}.mosaic button{grid-column:span 1!important;grid-row:span 1!important}.mosaic .m1{grid-column:span 2!important;grid-row:span 2!important}}
+.lb{position:fixed;inset:0;z-index:100;background:rgba(4,4,5,.96);display:none;align-items:center;justify-content:center;padding:24px}
+.lb.open{display:flex}
+.lb img{max-height:86vh;width:auto;max-width:100%}
+.lb p{position:absolute;bottom:20px;left:0;right:0;text-align:center;margin:0}
+.lb button{position:absolute;background:none;border:0;color:#fff;font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;cursor:pointer;padding:14px;opacity:.75}
+.lb button:hover{opacity:1}
+.lb .prev{left:12px;top:50%}.lb .next{right:12px;top:50%}.lb .close{top:14px;right:12px}
+
+/* run */
+.run{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--rule)}
+.run>div{padding:36px 0 40px}
+.run>div+div{padding-left:var(--gut);border-left:1px solid var(--rule)}
+.run h3{margin:14px 0 10px;font-size:clamp(24px,2.6vw,36px);line-height:1}
+.run>div>p{color:var(--muted);margin:0 0 22px;max-width:460px}
+pre{margin:0;position:relative;background:#111215;padding:22px 22px;font:14px/1.8 var(--mono);color:#d9d6d0;overflow-x:auto}
+pre .p{color:var(--sun);user-select:none}
+pre .cm{color:var(--dim)}
+.copy{position:absolute;top:12px;right:12px;background:none;border:1px solid #2c2d31;color:var(--muted);font:500 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:8px 10px;cursor:pointer}
+.copy:hover{color:var(--ink);border-color:var(--muted)}
+.run .after{margin-top:16px;font-size:14px;color:var(--muted)}
+code{font:13px var(--mono);color:var(--ink)}
+@media (max-width:860px){.run{grid-template-columns:1fr}.run>div+div{padding-left:0;border-left:0;border-top:1px solid var(--rule)}}
+
+/* keys + colophon */
+.keys{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule)}
+.keys div{padding:22px 0;border-bottom:1px solid var(--rule);display:grid;gap:10px}
+.keys div:not(:nth-child(4n+1)){padding-left:20px;border-left:1px solid var(--rule)}
+kbd{font:500 13px/1 var(--mono);color:var(--ink)}
+.keys span{color:var(--muted);font-size:14px}
+@media (max-width:860px){.keys{grid-template-columns:1fr 1fr}.keys div:nth-child(n){padding-left:0;border-left:0}.keys div:nth-child(2n){padding-left:20px;border-left:1px solid var(--rule)}}
+
+.colophon{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gut);padding-block:56px;border-top:1px solid var(--rule);font-size:14px;color:var(--muted)}
+.colophon p{margin:12px 0 0}
+.colophon a{color:var(--ink);text-decoration-color:var(--dim);text-underline-offset:3px}
+.colophon a:hover{text-decoration-color:var(--sun)}
+@media (max-width:860px){.colophon{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.colophon{grid-template-columns:1fr}}
+
+/* end card */
+.end{position:relative;isolation:isolate;overflow:hidden;text-align:center;padding-block:clamp(120px,18vw,240px)}
+.end>img{position:absolute;inset:0;height:100%;object-fit:cover;z-index:-2;opacity:.45}
+.end::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,var(--bg) 0%,rgba(10,11,13,.35) 35%,rgba(10,11,13,.35) 65%,var(--bg) 100%)}
+.end h2{margin:18px 0 34px;font-size:clamp(48px,10vw,170px);line-height:.82}
+.end h2 span{color:var(--sun)}
+.cta{display:inline-flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:17px 26px;font:500 13px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;text-decoration:none;transition:background .25s,color .25s,border-color .25s}
+.btn.solid{background:var(--sun);color:#140d02}
+.btn.solid:hover{background:var(--sun2)}
+.btn.line{border:1px solid rgba(255,255,255,.35)}
+.btn.line:hover{border-color:#fff}
+.btn svg{width:16px;height:16px}
+footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;padding-block:26px;border-top:1px solid var(--rule)}
+footer a{text-decoration:none}
+footer a:hover{color:var(--ink)}
+
+.rv{opacity:0;transform:translateY(24px);transition:opacity .9s ease,transform .9s cubic-bezier(.2,.7,.2,1)}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}.cover>img{animation:none;transform:none}html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <a class="mark" href="#top">KERVAN 5V5</a>
+  <nav>
+    <a href="#maps">Maps</a>
+    <a href="#gameplay">Gameplay</a>
+    <a href="#rendering">Rendering</a>
+    <a href="#gallery">Gallery</a>
+    <a href="https://github.com/artdzy/kervan-5v5" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
+
+<section class="cover" id="top">
+  <img src="img/hero.jpg" alt="First-person view down a rain-soaked container corridor at sunset on the Liman map" width="2000" height="1125" fetchpriority="high">
+  <div class="pad">
+    <div class="label" style="color:#cfcac2;margin-bottom:22px"><b>●</b>&nbsp; Open-source browser shooter &nbsp;/&nbsp; 2026</div>
+    <h1 class="x">Kervan <span>5v5</span></h1>
+    <div class="cover-meta">
+      <div><span class="label">Genre</span><strong>Tactical FPS, bomb defusal</strong></div>
+      <div><span class="label">Players</span><strong>5 vs 5, bots fill empty slots</strong></div>
+      <div><span class="label">Platform</span><strong>Any modern browser, no install</strong></div>
+      <div><span class="label">Stack</span><strong>three.js · Node.js · WebSocket</strong></div>
+    </div>
+  </div>
+</section>
+
+<section class="statement pad">
+  <div class="side rv">
+    <span class="label"><b>00</b> — Overview</span>
+    <p>A complete competitive shooter built from scratch for the web: authoritative server, lag-compensated hit detection, bots with path-finding, and a custom post-processing pipeline written directly in GLSL.</p>
+  </div>
+  <p class="rv">One team plants the bomb. The other holds the site. <em>Rounds, money, utility and nerve</em> — the rhythm of a tactical shooter, running in a browser tab you can share with a single link.</p>
+</section>
+
+<figure class="plate rv">
+  <img src="img/liman-sunset.jpg" alt="Sunset over the quay on Liman with volumetric light and rain on the rifle" loading="lazy" width="1600" height="900">
+  <figcaption class="label" style="color:#fff">Liman — the quay at golden hour</figcaption>
+</figure>
+
+<!-- MAPS -->
+<div id="maps" class="chapter pad">
+  <span class="num x rv">01</span>
+  <h2 class="x rv">Liman</h2>
+  <p class="kicker rv">A rain-soaked container port at sunset. Wet asphalt mirrors the sodium lamps, gantry cranes loom over site A, and light pours through gaps in the warehouse roof onto site B. Out past the quay, a cargo ship waits on a choppy sea while lightning breaks the sky.</p>
+</div>
+<div class="duo">
+  <figure class="plate rv"><img src="img/liman-containers.jpg" alt="Container stacks reflected in puddles" loading="lazy" width="1600" height="900"></figure>
+  <figure class="plate rv"><img src="img/liman-gantry.jpg" alt="Gantry crane over the container yard, site A" loading="lazy" width="1600" height="900"></figure>
+</div>
+<figure class="plate rv">
+  <img src="img/liman-warehouse.jpg" alt="Inside the warehouse at bomb site B" loading="lazy" width="1600" height="900">
+  <figcaption class="label" style="color:#fff">Site B — the warehouse</figcaption>
+</figure>
+<div class="pad" style="padding-block:clamp(48px,6vw,80px) 0">
+  <div class="palette-row rv">
+    <span class="label">Palette — Liman</span>
+    <div class="palette">
+      <span style="background:#1a1d21;color:#8f8c87">#1A1D21</span>
+      <span style="background:#37373b;color:#a9a6a0">#37373B</span>
+      <span style="background:#686368;color:#e7e3dc">#686368</span>
+      <span style="background:#b29b90;color:#2a2421">#B29B90</span>
+      <span style="background:#f0c48a;color:#3a2a14">#F0C48A</span>
+    </div>
+  </div>
+</div>
+
+<div class="chapter pad">
+  <span class="num x rv">02</span>
+  <h2 class="x rv">Kervan</h2>
+  <p class="kicker rv">A sun-baked desert town under a hard midday sky. Sandstone and plaster walls, arched passages, cobbled alleys and tight courtyards — built for close-quarters fights and long sightlines over the rooftops.</p>
+</div>
+<figure class="plate rv">
+  <img src="img/kervan-rooftops.jpg" alt="Kervan rooftops with rocky mountains behind" loading="lazy" width="1600" height="900">
+  <figcaption class="label" style="color:#fff">Kervan — over the rooftops</figcaption>
+</figure>
+<div class="duo">
+  <figure class="plate rv"><img src="img/kervan-alley.jpg" alt="Cobblestone alley lined with crates" loading="lazy" width="1600" height="900"></figure>
+  <figure class="plate rv"><img src="img/kervan-courtyard.jpg" alt="Courtyard with sandstone arches" loading="lazy" width="1600" height="900"></figure>
+</div>
+<div class="pad" style="padding-block:clamp(48px,6vw,80px) 0">
+  <div class="palette-row rv">
+    <span class="label">Palette — Kervan</span>
+    <div class="palette">
+      <span style="background:#3e2e23;color:#b9a691">#3E2E23</span>
+      <span style="background:#7e6243;color:#f1e4d2">#7E6243</span>
+      <span style="background:#c9a77a;color:#3a2a17">#C9A77A</span>
+      <span style="background:#e6d3b3;color:#4a3a24">#E6D3B3</span>
+      <span style="background:#3f557b;color:#dbe4f2">#3F557B</span>
+    </div>
+  </div>
+</div>
+
+<!-- GAMEPLAY -->
+<div id="gameplay" class="chapter pad">
+  <span class="num x rv">03</span>
+  <h2 class="x rv">Gameplay</h2>
+  <p class="kicker rv">Everything a tactical shooter needs, simulated on the server: round flow, economy, buy menu, half-time side swap and a full arsenal.</p>
+</div>
+<div class="pad">
+  <div class="numbers rv">
+    <div><b class="x">5<small>v</small>5</b><span>Attackers plant, defenders hold</span></div>
+    <div><b class="x">1:55</b><span>Round timer after a 5 s freeze</span></div>
+    <div><b class="x">40<small>s</small></b><span>Fuse once the bomb is planted</span></div>
+    <div><b class="x">13</b><span>Rounds to win, sides swap after 12</span></div>
+    <div><b class="x">30<small>hz</small></b><span>Authoritative server tick rate</span></div>
+    <div><b class="x">$3250</b><span>Win bonus; loss bonus scales from $1400</span></div>
+  </div>
+</div>
+<div class="pad" style="padding-top:clamp(56px,7vw,96px)">
+  <div class="specs rv">
+    <div><span class="label"><b>A</b> / Objective</span><h3>Plant &amp; defuse</h3><p>Hold E for 3.2 s to plant on site A or B. Defuse takes 10 s, or 5 s with a kit.</p></div>
+    <div><span class="label"><b>B</b> / Economy</span><h3>Buy every round</h3><p>Per-weapon kill rewards. Buy in spawn during the first 20 seconds of the round.</p></div>
+    <div><span class="label"><b>C</b> / Bots</span><h3>They play the map</h3><p>Bots buy, rotate through A, B and the tunnel with A* path-finding, plant and defuse.</p></div>
+    <div><span class="label"><b>D</b> / Netcode</span><h3>Lag compensated</h3><p>Server-side rewind for hit detection, client prediction and interpolated remote players.</p></div>
+  </div>
+</div>
+<div class="pad arsenal" style="margin-top:clamp(56px,7vw,96px)">
+  <ul>
+    <li class="rv"><span class="n">01</span><span class="w x">AK Assault</span><span class="t">Rifle</span></li>
+    <li class="rv"><span class="n">02</span><span class="w x">M4 Carbine</span><span class="t">Rifle</span></li>
+    <li class="rv"><span class="n">03</span><span class="w x">Sniper .338</span><span class="t">Scoped</span></li>
+    <li class="rv"><span class="n">04</span><span class="w x">SMG-9</span><span class="t">SMG</span></li>
+    <li class="rv"><span class="n">05</span><span class="w x">Shotgun 12</span><span class="t">Shotgun</span></li>
+    <li class="rv"><span class="n">06</span><span class="w x">Magnum .50</span><span class="t">Pistol</span></li>
+    <li class="rv"><span class="n">07</span><span class="w x">P9 Pistol</span><span class="t">Pistol</span></li>
+    <li class="rv"><span class="n">08</span><span class="w x">Grenade · Knife</span><span class="t">Utility</span></li>
+    <li class="rv"><span class="n">09</span><span class="w x">Kevlar · Helmet · Kit</span><span class="t">Gear</span></li>
+  </ul>
+</div>
+
+<figure class="plate rv" style="margin-top:clamp(80px,10vw,140px)">
+  <img src="img/liman-fp.jpg" alt="First-person rifle view looking down the container yard toward the crane" loading="lazy" width="1600" height="900">
+  <figcaption class="label" style="color:#fff">In-game, Ultra preset — rain beads on the weapon, lit by the map's HDRI</figcaption>
+</figure>
+
+<!-- RENDERING -->
+<div id="rendering" class="chapter pad">
+  <span class="num x rv">04</span>
+  <h2 class="x rv">Rendering</h2>
+  <p class="kicker rv">No off-the-shelf effects. Every post-processing pass is hand-written GLSL, tuned for a cinematic look and scaled through Ultra, High and Low presets with an automatic pixel budget on high-DPI screens.</p>
+</div>
+<div class="pad">
+  <div class="flow rv">
+    <div><h4 class="x">HDR scene</h4><p>MSAA, depth texture, PBR materials and HDRI image-based lighting.</p></div>
+    <div><h4 class="x">SSAO</h4><p>Half-resolution ambient occlusion that fades out on sunlit surfaces.</p></div>
+    <div><h4 class="x">Volumetrics</h4><p>Ray-marched sun shafts through the shadow map, two-lobe phase function.</p></div>
+    <div><h4 class="x">Wet world</h4><p>Planar reflections, puddle masks, ripple rings, GPU rain and splashes.</p></div>
+    <div><h4 class="x">Bloom &amp; lens</h4><p>Six-level bloom, eye adaptation, lens dirt, ghosts and starburst flare.</p></div>
+    <div><h4 class="x">Final grade</h4><p>ACES/AgX tone mapping, split-tone grade, vignette, film grain, dither.</p></div>
+  </div>
+</div>
+
+<!-- GALLERY -->
+<div id="gallery" class="chapter pad">
+  <span class="num x rv">05</span>
+  <h2 class="x rv">Frames</h2>
+  <p class="kicker rv">All captured in real time, in the browser, on the Ultra preset.</p>
+</div>
+<div class="mosaic rv" id="mosaic">
+  <button class="m1" data-cap="Liman — container corridor"><img src="img/liman-containers.jpg" alt="Liman container corridor" loading="lazy"></button>
+  <button class="m2" data-cap="Liman — the quay"><img src="img/liman-quay.jpg" alt="Liman quay and cargo ship" loading="lazy"></button>
+  <button class="m3" data-cap="Liman — site B warehouse"><img src="img/liman-warehouse.jpg" alt="Liman warehouse" loading="lazy"></button>
+  <button class="m4" data-cap="Kervan — cobblestone alley"><img src="img/kervan-alley.jpg" alt="Kervan alley" loading="lazy"></button>
+  <button class="m5" data-cap="Liman — first person under the crane"><img src="img/liman-fp.jpg" alt="Liman first person" loading="lazy"></button>
+  <button class="m6" data-cap="Kervan — arched courtyard"><img src="img/kervan-courtyard.jpg" alt="Kervan courtyard" loading="lazy"></button>
+</div>
+
+<!-- RUN -->
+<div id="play" class="chapter pad">
+  <span class="num x rv">06</span>
+  <h2 class="x rv">Play it</h2>
+  <p class="kicker rv">Requires Node.js 18 or newer on the host. Players only need a browser.</p>
+</div>
+<div class="pad">
+  <div class="run rv">
+    <div>
+      <span class="label"><b>A</b> / Local network</span>
+      <h3 class="x">Start a server</h3>
+      <p>Run the server and open it in your browser. Friends on the same network join via the LAN address it prints.</p>
+      <pre><button class="copy" data-copy="git clone https://github.com/artdzy/kervan-5v5.git&#10;cd kervan-5v5&#10;npm install&#10;npm start">Copy</button><span class="p">$ </span>git clone https://github.com/artdzy/kervan-5v5.git
+<span class="p">$ </span>cd kervan-5v5
+<span class="p">$ </span>npm install
+<span class="p">$ </span>npm start</pre>
+      <p class="after">Then open <code>http://localhost:3000</code></p>
+    </div>
+    <div>
+      <span class="label"><b>B</b> / Over the internet</span>
+      <h3 class="x">Share one link</h3>
+      <p>Expose the game for free with a Cloudflare Quick Tunnel — no account, no port forwarding.</p>
+      <pre><button class="copy" data-copy="brew install cloudflared&#10;npm start&#10;npm run tunnel">Copy</button><span class="p">$ </span>brew install cloudflared  <span class="cm"># once</span>
+<span class="p">$ </span>npm start                 <span class="cm"># terminal 1</span>
+<span class="p">$ </span>npm run tunnel            <span class="cm"># terminal 2</span></pre>
+      <p class="after">Send the <code>https://….trycloudflare.com</code> address to your squad.</p>
+    </div>
+  </div>
+  <div class="keys rv" style="margin-top:clamp(56px,7vw,96px)">
+    <div><kbd>W A S D · Mouse</kbd><span>Move · aim</span></div>
+    <div><kbd>LMB · RMB</kbd><span>Fire · scope</span></div>
+    <div><kbd>Space · Ctrl · Shift</kbd><span>Jump · crouch · walk</span></div>
+    <div><kbd>R</kbd><span>Reload</span></div>
+    <div><kbd>1–5 · Q · Wheel</kbd><span>Weapons · last weapon</span></div>
+    <div><kbd>E (hold)</kbd><span>Plant · defuse</span></div>
+    <div><kbd>B · L</kbd><span>Buy menu · loadout</span></div>
+    <div><kbd>Tab · T</kbd><span>Scoreboard · chat</span></div>
+  </div>
+</div>
+
+<section class="end">
+  <img src="img/liman-gantry.jpg" alt="" loading="lazy" aria-hidden="true">
+  <div class="pad rv">
+    <span class="label">Thanks for watching</span>
+    <h2 class="x">Plant it.<br><span>Hold it.</span></h2>
+    <div class="cta">
+      <a class="btn solid" href="https://github.com/artdzy/kervan-5v5" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        View on GitHub
+      </a>
+      <a class="btn line" href="#play">How to play</a>
+    </div>
+  </div>
+</section>
+
+<div class="pad">
+  <div class="colophon">
+    <div><span class="label">Weapons</span><p>Animated first-person models by DJMaesen (@bumstrum) via <a href="https://sketchfab.com/ahmettanju.2013/collections/high-quality-fps-assets-for-unity-fd68dd910c354c33ab8f8b1ad6d316f1" rel="noopener">Sketchfab</a>, CC BY 4.0. See <a href="https://github.com/artdzy/kervan-5v5/blob/main/CREDITS.md" rel="noopener">CREDITS.md</a>.</p></div>
+    <div><span class="label">Environment</span><p>HDRI skies, PBR textures and props from <a href="https://polyhaven.com" rel="noopener">Poly Haven</a>, CC0.</p></div>
+    <div><span class="label">Character</span><p>Soldier model from the three.js examples (Mixamo).</p></div>
+    <div><span class="label">License</span><p>Source code released under the MIT license.</p></div>
+  </div>
+  <footer class="label">
+    <span>Kervan 5v5</span>
+    <span><a href="https://github.com/artdzy/kervan-5v5">GitHub</a> &nbsp;/&nbsp; <a href="https://github.com/artdzy/kervan-5v5/issues">Issues</a> &nbsp;/&nbsp; <a href="#top">Top ↑</a></span>
+  </footer>
+</div>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer">
+  <button class="close">Close ×</button>
+  <button class="prev">← Prev</button>
+  <img alt="">
+  <button class="next">Next →</button>
+  <p class="label"></p>
+</div>
+
+<script>
+(() => {
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -6% 0px' }) : null;
+  document.querySelectorAll('.rv').forEach((el) => io ? io.observe(el) : el.classList.add('in'));
+
+  document.querySelectorAll('.copy').forEach((b) => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch { b.textContent = 'Failed'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1600);
+  }));
+
+  const items = [...document.querySelectorAll('#mosaic button')];
+  const lb = document.getElementById('lb'), img = lb.querySelector('img'), cap = lb.querySelector('p');
+  let i = 0, last = null;
+  const show = (k) => { i = (k + items.length) % items.length; const t = items[i].querySelector('img'); img.src = t.src; img.alt = t.alt; cap.textContent = items[i].dataset.cap; };
+  const open = (k) => { last = document.activeElement; show(k); lb.classList.add('open'); document.body.style.overflow = 'hidden'; lb.querySelector('.close').focus(); };
+  const close = () => { lb.classList.remove('open'); document.body.style.overflow = ''; last && last.focus(); };
+  items.forEach((b, k) => b.addEventListener('click', () => open(k)));
+  lb.querySelector('.close').onclick = close;
+  lb.querySelector('.prev').onclick = () => show(i - 1);
+  lb.querySelector('.next').onclick = () => show(i + 1);
+  lb.addEventListener('click', (e) => { if (e.target === lb) close(); });
+  addEventListener('keydown', (e) => { if (!lb.classList.contains('open')) return; if (e.key === 'Escape') close(); if (e.key === 'ArrowLeft') show(i - 1); if (e.key === 'ArrowRight') show(i + 1); });
+})();
+</script>
+</body>
+</html>

@@ -1,124 +1,87 @@
-// "Kervan" haritası — ızgara tabanlı. Her hücre CELL x CELL metre.
-// '#' duvar, '.' zemin, 'c' alçak sandık, 'C' yüksek sandık, 'A'/'B' bomba bölgesi zemini
+// Ortak harita çekirdeği: aktif harita (setMap ile seçilir), çarpışma, ışın izleme, A* yol bulma.
+// Izgara tabanlı; her hücre CELL x CELL metre. Harita tanımları shared/maps/ altında.
 
 import { PLAYER } from './constants.js';
 import { rayAABB } from './util.js';
+import kervan from './maps/kervan.js';
+import liman from './maps/liman.js';
 
 export const CELL = 2;
 export const WALL_H = 6;
 export const CRATE_H = 1.1;
 export const BIGCRATE_H = 2.2;
-export const MAP_W = 48;
-export const MAP_H = 44;
-export const MAP_NAME = 'Kervan';
+export const MAPS = { kervan, liman };
+export const MAP_IDS = Object.keys(MAPS);
 
-function build() {
-  const g = [];
-  for (let z = 0; z < MAP_H; z++) g.push(new Array(MAP_W).fill('#'));
-  const carve = (x0, z0, x1, z1, ch = '.') => {
-    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) g[z][x] = ch;
+// ---- aktif harita (canlı bağlamalar: setMap sonrası güncellenir)
+export let MAP = null;          // tanım + build çıktısı
+export let MAP_ID = null;
+export let MAP_NAME = '';
+export let MAP_W = 0;
+export let MAP_H = 0;
+export let GRID = [];
+export let SPAWNS = { def: [], att: [] };
+export let SPAWN_YAW = { def: 0, att: 0 };
+export let SPAWN_CENTER = { def: { x: 0, y: 0, z: 0 }, att: { x: 0, y: 0, z: 0 } };
+export let REGIONS = {};
+let HEIGHTS = new Float32Array(0);
+
+export function cellCenter(cx, cz) { return { x: (cx + 0.5) * CELL, y: 0, z: (cz + 0.5) * CELL }; }
+
+export function setMap(id) {
+  const def = MAPS[id] || MAPS.kervan;
+  const built = def.build();
+  MAP = { ...def, ...built };
+  MAP_ID = def.id; MAP_NAME = def.name; MAP_W = def.W; MAP_H = def.H;
+  GRID = built.rows; HEIGHTS = built.heights;
+  SPAWNS = {
+    def: def.spawnCells.def.map(([x, z]) => cellCenter(x, z)),
+    att: def.spawnCells.att.map(([x, z]) => cellCenter(x, z)),
   };
-  const put = (list, ch) => list.forEach(([x, z]) => { g[z][x] = ch; });
-
-  carve(19, 2, 28, 7);    // savunma doğuşu
-  carve(29, 3, 32, 4);    // savunma -> A
-  carve(15, 5, 18, 6);    // savunma -> B
-  carve(33, 3, 44, 14);   // A bölgesi
-  carve(3, 3, 14, 14);    // B bölgesi
-  carve(22, 8, 25, 35);   // orta koridor
-  carve(18, 36, 29, 41);  // saldırı doğuşu
-  carve(30, 37, 43, 40);  // A uzun (yatay)
-  carve(40, 15, 43, 36);  // A uzun (dikey)
-  carve(26, 19, 34, 21);  // A kısa / köprü
-  carve(33, 15, 35, 18);  // A kısa çıkış
-  carve(8, 36, 17, 38);   // B tünel giriş
-  carve(6, 22, 9, 35);    // B tünel
-  carve(5, 17, 12, 23);   // B üst tünel odası
-  carve(6, 15, 9, 16);    // B tünel çıkış
-  carve(15, 11, 21, 12);  // ortadan B'ye geçit
-  g[14][22] = '#'; g[14][25] = '#'; // orta kapı daralması
-  g[15][22] = '#'; g[15][25] = '#';
-
-  carve(35, 5, 42, 12, 'A');
-  carve(5, 5, 12, 12, 'B');
-
-  put([[37, 8], [38, 8], [38, 9], [22, 30], [40, 20], [8, 8], [9, 8], [30, 37], [10, 18], [24, 4], [24, 5]], 'C');
-  put([[36, 9], [43, 4], [34, 12], [41, 11], [8, 9], [4, 4], [12, 12], [13, 5],
-       [23, 24], [42, 26], [19, 37], [28, 40], [11, 20], [20, 3], [27, 3], [16, 12], [24, 33], [43, 33]], 'c');
-  return g.map((r) => r.join(''));
+  SPAWN_YAW = { ...def.spawnYaw };
+  SPAWN_CENTER = { def: cellCenter(...def.spawnCenter.def), att: cellCenter(...def.spawnCenter.att) };
+  const cellsWhere = (fn) => { const out = []; for (let z = 0; z < MAP_H; z++) for (let x = 0; x < MAP_W; x++) if (fn(x, z)) out.push([x, z]); return out; };
+  REGIONS = {
+    A: cellsWhere((x, z) => cellChar(x, z) === 'A'),
+    B: cellsWhere((x, z) => cellChar(x, z) === 'B'),
+  };
+  for (const [k, [x0, z0, x1, z1]] of Object.entries(def.regions)) {
+    REGIONS[k] = cellsWhere((x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && walkable(x, z));
+  }
+  return MAP;
 }
-
-export const GRID = build();
 
 export function cellChar(cx, cz) {
   if (cx < 0 || cz < 0 || cx >= MAP_W || cz >= MAP_H) return '#';
   return GRID[cz][cx];
 }
 
-// Bina yükseklikleri: 4x4 hücrelik bloklara göre 6-10 m arası (deterministik)
-function hash2(x, z) {
-  let h = (x * 374761393 + z * 668265263) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-export function buildingId(cx, cz) { return Math.floor(cx / 4) * 1000 + Math.floor(cz / 4); }
-export function buildingRand(cx, cz, salt = 0) { return hash2(Math.floor(cx / 4) + salt * 31, Math.floor(cz / 4) + salt * 17); }
-const WALL_HEIGHTS = (() => {
-  const a = new Float32Array(MAP_W * MAP_H);
-  for (let z = 0; z < MAP_H; z++) for (let x = 0; x < MAP_W; x++) {
-    const edge = x === 0 || z === 0 || x === MAP_W - 1 || z === MAP_H - 1;
-    a[z * MAP_W + x] = edge ? 10 : WALL_H + Math.floor(buildingRand(x, z) * 5);
-  }
-  return a;
-})();
+const SOLID = new Set(['#', 'W', 'P', '~']);
+export function isSolidChar(c) { return SOLID.has(c); }
 
 export function cellHeight(cx, cz) {
-  const c = cellChar(cx, cz);
-  if (c === '#') {
-    if (cx < 0 || cz < 0 || cx >= MAP_W || cz >= MAP_H) return 12;
-    return WALL_HEIGHTS[cz * MAP_W + cx];
-  }
+  if (cx < 0 || cz < 0 || cx >= MAP_W || cz >= MAP_H) return 12;
+  const c = GRID[cz][cx];
+  if (SOLID.has(c)) return HEIGHTS[cz * MAP_W + cx];
   return c === 'C' ? BIGCRATE_H : c === 'c' ? CRATE_H : 0;
 }
 
+// Kervan görselleri için bina rastgeleliği (geriye uyum)
+export { buildingRand } from './maps/kervan.js';
+
 export function walkable(cx, cz) { return cellHeight(cx, cz) === 0; }
 export function cellOf(x, z) { return [Math.floor(x / CELL), Math.floor(z / CELL)]; }
-export function cellCenter(cx, cz) { return { x: (cx + 0.5) * CELL, y: 0, z: (cz + 0.5) * CELL }; }
 
 export function zoneAt(x, z) {
   const c = cellChar(Math.floor(x / CELL), Math.floor(z / CELL));
   return c === 'A' || c === 'B' ? c : null;
 }
 
-// ---- Doğuş noktaları ----
-const spawnCells = {
-  def: [[21, 4], [23, 3], [25, 4], [27, 5], [22, 6], [24, 6], [26, 3], [20, 5], [28, 6], [25, 6]],
-  att: [[20, 39], [22, 38], [24, 39], [26, 38], [28, 39], [21, 40], [23, 40], [25, 40], [27, 41], [19, 41]],
-};
-export const SPAWNS = {
-  def: spawnCells.def.map(([x, z]) => cellCenter(x, z)),
-  att: spawnCells.att.map(([x, z]) => cellCenter(x, z)),
-};
-export const SPAWN_YAW = { def: Math.PI, att: 0 }; // def güneye, att kuzeye bakar
-export const SPAWN_CENTER = { def: cellCenter(23.5, 4.5), att: cellCenter(23.5, 39) };
-
-// ---- Bölgeler (botlar için) ----
-function cellsWhere(fn) {
-  const out = [];
-  for (let z = 0; z < MAP_H; z++) for (let x = 0; x < MAP_W; x++) if (fn(x, z)) out.push([x, z]);
-  return out;
+// çatı altında mı (yağmur maskesi, ses vb.)
+export function underRoof(x, z) {
+  for (const [x0, z0, x1, z1] of MAP?.roofs || []) if (x >= x0 && x <= x1 && z >= z0 && z <= z1) return true;
+  return false;
 }
-const rect = (x0, z0, x1, z1) => (x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1 && walkable(x, z);
-export const REGIONS = {
-  A: cellsWhere((x, z) => cellChar(x, z) === 'A'),
-  B: cellsWhere((x, z) => cellChar(x, z) === 'B'),
-  Aarea: cellsWhere(rect(33, 3, 44, 14)),
-  Barea: cellsWhere(rect(3, 3, 14, 14)),
-  mid: cellsWhere(rect(22, 9, 25, 13)),
-  midLow: cellsWhere(rect(22, 22, 25, 30)),
-  long: cellsWhere(rect(40, 22, 43, 34)),
-  tunnel: cellsWhere(rect(5, 17, 12, 23)),
-};
 
 // ---- Çarpışma ----
 function overlapCells(x, z, r, fn) {
@@ -127,7 +90,6 @@ function overlapCells(x, z, r, fn) {
   for (let cz = cz0; cz <= cz1; cz++) for (let cx = cx0; cx <= cx1; cx++) fn(cx, cz);
 }
 
-// Eksen boyunca hareket ettir ve çarpışmayı çöz. Çarptıysa true
 export function moveAxis(pos, axis, delta, r = PLAYER.radius) {
   if (delta === 0) return false;
   pos[axis] += delta;
@@ -194,12 +156,8 @@ export function hasLOS(a, b) {
 
 // ---- A* yol bulma ----
 export function findPath(sx, sz, gx, gz) {
-  if (!walkable(gx, gz)) {
-    const n = nearestWalkable(gx, gz); if (!n) return null; [gx, gz] = n;
-  }
-  if (!walkable(sx, sz)) {
-    const n = nearestWalkable(sx, sz); if (!n) return null; [sx, sz] = n;
-  }
+  if (!walkable(gx, gz)) { const n = nearestWalkable(gx, gz); if (!n) return null; [gx, gz] = n; }
+  if (!walkable(sx, sz)) { const n = nearestWalkable(sx, sz); if (!n) return null; [sx, sz] = n; }
   const N = MAP_W * MAP_H, idx = (x, z) => z * MAP_W + x;
   const gS = new Float32Array(N).fill(Infinity), from = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
   const heap = [];
@@ -236,3 +194,5 @@ export function nearestWalkable(cx, cz) {
       if (walkable(cx + dx, cz + dz)) return [cx + dx, cz + dz];
   return null;
 }
+
+setMap('kervan');
